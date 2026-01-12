@@ -10,6 +10,7 @@ Chat applications powered by Databricks' model serving endpoints. This project p
 - ⚡ Streaming responses
 - 🔒 Secure authentication
 - 🎯 Rate limiting and error handling
+- 🔀 Dynamic serving endpoint selection via UI dropdown
 
 ## Architecture
 
@@ -18,6 +19,8 @@ The application is built with:
 - SQLite for chat history storage
 - Async/await patterns for efficient request handling
 - Dependency injection for clean code organization
+- React frontend with Mantine UI components
+- TypeScript for type safety
 
 ## Getting Started
 
@@ -65,3 +68,43 @@ Here's how the chat interface looks like
 - `models.py`: Data models and schemas
 - `chat_database.py`: Database interactions
 - `token_minter.py`: Authentication handling
+
+## Dynamic Endpoint Selection
+
+The application supports dynamic selection of Databricks serving endpoints via a UI dropdown. This allows users to switch between different AI models without requiring configuration changes.
+
+### Backend API
+
+The backend provides the following endpoint for fetching available serving endpoints:
+
+```
+GET /chat-api/serving-endpoints
+```
+
+Returns a list of available Databricks serving endpoints with their metadata:
+
+```json
+{
+  "endpoints": [
+    {
+      "name": "endpoint-name",
+      "state": "READY",
+      "creator": "user@example.com",
+      "creation_timestamp": 1234567890
+    }
+  ]
+}
+```
+
+### Frontend Component
+
+The endpoint selector is implemented using Mantine UI's Combobox component, located in the top navigation bar. It features:
+
+- Loading state while fetching endpoints
+- Error handling for API failures
+- Accessible dropdown with ARIA labels
+- Responsive design for mobile/tablet/desktop
+
+### Configuration
+
+The `SERVING_ENDPOINT_NAME` environment variable in `app.yaml` is now optional. If not set, users must select an endpoint from the UI dropdown before sending messages.

@@ -1,5 +1,7 @@
 import React from 'react';
 import styled from 'styled-components';
+import { MantineProvider } from '@mantine/core';
+import '@mantine/core/styles.css';
 import { ChatProvider } from './context/ChatContext';
 import LeftComponent from './components/LeftComponent';
 import ChatArea from './components/ChatArea';
@@ -28,14 +30,16 @@ const MainContent = styled.div<MainContentProps>`
 
 const App: React.FC = () => {
   return (
-    <ChatProvider>
-      <AppContainer data-testid="app-container">
-        <MainContent data-testid="main-content">
-          <LeftComponent />
-          <ChatArea />
-        </MainContent>
-      </AppContainer>
-    </ChatProvider>
+    <MantineProvider>
+      <ChatProvider>
+        <AppContainer data-testid="app-container">
+          <MainContent data-testid="main-content">
+            <LeftComponent />
+            <ChatArea />
+          </MainContent>
+        </AppContainer>
+      </ChatProvider>
+    </MantineProvider>
   );
 };
 

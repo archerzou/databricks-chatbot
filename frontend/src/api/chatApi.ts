@@ -17,7 +17,8 @@ export const sendMessage = async (
       totalTime?: number;
     },
     model?: string
-  }) => void
+  }) => void,
+  servingEndpoint?: string
 ): Promise<void> => {
   try {
     console.log("Sending message to backend");
@@ -32,7 +33,8 @@ export const sendMessage = async (
         body: JSON.stringify({ 
           content,
           session_id: sessionId,
-          include_history: includeHistory
+          include_history: includeHistory,
+          serving_endpoint: servingEndpoint
         })
       }
     );
@@ -162,7 +164,8 @@ export const regenerateMessage = async (
       timeToFirstToken?: number;
       totalTime?: number;
     }
-  }) => void
+  }) => void,
+  servingEndpoint?: string
 ): Promise<void> => {
   try {
     const response = await fetch(
@@ -177,7 +180,8 @@ export const regenerateMessage = async (
           message_id: messageId,
           original_content: content,
           session_id: sessionId,
-          include_history: includeHistory
+          include_history: includeHistory,
+          serving_endpoint: servingEndpoint
         })
       }
     );
@@ -300,4 +304,29 @@ export const rateMessage = async (messageId: string, rating: 'up' | 'down' | nul
 
 export const logout = async () => {
   window.location.href = `${API_URL}/logout`;
+};
+
+export interface ServingEndpoint {
+  name: string;
+  state?: string;
+  creator?: string;
+  creation_timestamp?: number;
+}
+
+export interface ServingEndpointsResponse {
+  endpoints: ServingEndpoint[];
+}
+
+export const getServingEndpoints = async (): Promise<ServingEndpointsResponse> => {
+  try {
+    const response = await fetch(`${API_URL}/serving-endpoints`);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error fetching serving endpoints:', error);
+    throw error;
+  }
 };

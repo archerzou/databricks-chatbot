@@ -1,6 +1,7 @@
 import React from 'react';
 import styled from 'styled-components';
 import UserMenu from './UserMenu';
+import EndpointSelector from './EndpointSelector';
 
 const TopNav = styled.div`
   display: flex;
@@ -12,9 +13,10 @@ const TopNav = styled.div`
 const ChatTopNav: React.FC = () => {
   return (
     <TopNav data-testid="chat-top-nav">
+      <EndpointSelector />
       <UserMenu />
     </TopNav>
   );
 };
 
-export default ChatTopNav; 
+export default ChatTopNav;   

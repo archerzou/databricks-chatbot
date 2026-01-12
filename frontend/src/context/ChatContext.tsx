@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Message, Chat } from '../types';
-import { sendMessage as apiSendMessage, getChatHistory, API_URL, postError, regenerateMessage as apiRegenerateMessage, postRegenerateError, getModel, rateMessage as apiRateMessage, logout as apiLogout } from '../api/chatApi';
+import { sendMessage as apiSendMessage, getChatHistory, API_URL, postError, regenerateMessage as apiRegenerateMessage, postRegenerateError, getModel, rateMessage as apiRateMessage, logout as apiLogout, getServingEndpoints, ServingEndpoint } from '../api/chatApi';
 import { v4 as uuid } from 'uuid';
 
 interface ChatContextType {
@@ -21,6 +21,11 @@ interface ChatContextType {
   logout: () => void;
   error: string | null;
   clearError: () => void;
+  servingEndpoints: ServingEndpoint[];
+  selectedEndpoint: string | null;
+  setSelectedEndpoint: (endpoint: string | null) => void;
+  endpointsLoading: boolean;
+  endpointsError: string | null;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -35,6 +40,10 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
   const [messageRatings, setMessageRatings] = useState<{[messageId: string]: 'up' | 'down'}>({});
   const [model, setModel] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+  const [servingEndpoints, setServingEndpoints] = useState<ServingEndpoint[]>([]);
+  const [selectedEndpoint, setSelectedEndpoint] = useState<string | null>(null);
+  const [endpointsLoading, setEndpointsLoading] = useState<boolean>(true);
+  const [endpointsError, setEndpointsError] = useState<string | null>(null);
 
   const clearError = () => setError(null);
 
@@ -63,8 +72,26 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       }
     };
 
+    const fetchEndpoints = async () => {
+      try {
+        setEndpointsLoading(true);
+        setEndpointsError(null);
+        const response = await getServingEndpoints();
+        setServingEndpoints(response.endpoints);
+        if (response.endpoints.length > 0) {
+          setSelectedEndpoint(response.endpoints[0].name);
+        }
+      } catch (error) {
+        console.error('Failed to fetch serving endpoints:', error);
+        setEndpointsError('Failed to load serving endpoints. Please try again.');
+      } finally {
+        setEndpointsLoading(false);
+      }
+    };
+
     fetchChats();
     fetchModel();
+    fetchEndpoints();
   }, []);
 
   const sendMessage = async (content: string, includeHistory: boolean = true) => {
@@ -130,7 +157,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
               }
             : msg
         ));
-      });
+      }, selectedEndpoint || undefined);
       
       const botMessage: Message = {
         message_id: messageId,
@@ -311,7 +338,8 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           if (chunk.metrics) {
             messageMetrics = chunk.metrics;
           }
-        }
+        },
+        selectedEndpoint || undefined
       );
 
       const finalMessage: Message = {
@@ -436,7 +464,12 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       messageRatings,
       logout,
       error,
-      clearError
+      clearError,
+      servingEndpoints,
+      selectedEndpoint,
+      setSelectedEndpoint,
+      endpointsLoading,
+      endpointsError
     }}>
       {children}
     </ChatContext.Provider>
@@ -449,4 +482,4 @@ export const useChat = () => {
     throw new Error('useChat must be used within a ChatProvider');
   }
   return context;
-}; 
+};              

@@ -17,8 +17,8 @@ from chat_database import ChatDatabase
 from token_minter import TokenMinter
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from models import MessageRequest, MessageResponse, ChatHistoryItem, ChatHistoryResponse, CreateChatRequest, ErrorRequest, RegenerateRequest
-from utils.config import URL, SERVING_ENDPOINT_NAME, DATABRICKS_HOST, CLIENT_ID, CLIENT_SECRET
+from models import MessageRequest, MessageResponse, ChatHistoryItem, ChatHistoryResponse, CreateChatRequest, ErrorRequest, RegenerateRequest, ServingEndpoint, ServingEndpointsResponse
+from utils.config import URL, SERVING_ENDPOINT_NAME, DATABRICKS_HOST, CLIENT_ID, CLIENT_SECRET, get_serving_endpoint_url
 from utils import *
 from utils.logging_handler import with_logging
 from utils.app_state import app_state
@@ -89,6 +89,37 @@ async def error(
 async def get_model():
     return {"model": SERVING_ENDPOINT_NAME}
 
+
+@api_app.get("/serving-endpoints", response_model=ServingEndpointsResponse)
+async def get_serving_endpoints(
+    user_info: dict = Depends(get_user_info)
+):
+    """
+    Fetch available serving endpoints from Databricks.
+    Uses the Databricks SDK to list all serving endpoints.
+    """
+    try:
+        client = WorkspaceClient()
+        endpoints_list = client.serving_endpoints.list()
+        
+        endpoints = []
+        for endpoint in endpoints_list:
+            endpoints.append(ServingEndpoint(
+                name=endpoint.name,
+                state=endpoint.state.ready if endpoint.state else None,
+                creator=endpoint.creator if hasattr(endpoint, 'creator') else None,
+                creation_timestamp=endpoint.creation_timestamp if hasattr(endpoint, 'creation_timestamp') else None
+            ))
+        
+        return ServingEndpointsResponse(endpoints=endpoints)
+    except Exception as e:
+        logger.error(f"Failed to fetch serving endpoints: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch serving endpoints: {str(e)}"
+        )
+
+
 # Modify the chat endpoint to handle sessions
 @api_app.post("/chat")
 async def chat(
@@ -107,6 +138,16 @@ async def chat(
     try:
         user_id = user_info["user_id"]
         is_first_message = chat_db.is_first_message(message.session_id, user_id)
+        
+        # Determine which endpoint to use - prefer request parameter, fall back to default
+        endpoint_name = message.serving_endpoint or SERVING_ENDPOINT_NAME
+        if not endpoint_name:
+            raise HTTPException(
+                status_code=400,
+                detail="No serving endpoint specified. Please select an endpoint."
+            )
+        endpoint_url = get_serving_endpoint_url(endpoint_name)
+        
         user_message = message_handler.create_message(
             message_id=str(uuid.uuid4()),
             content=message.content,
@@ -127,7 +168,7 @@ async def chat(
                     write=8.0,
                     pool=8.0
                 )
-                supports_streaming, supports_trace = await check_endpoint_capabilities(SERVING_ENDPOINT_NAME, streaming_support_cache)
+                supports_streaming, supports_trace = await check_endpoint_capabilities(endpoint_name, streaming_support_cache)
                 
                 request_data = {
                     "messages": [
@@ -142,7 +183,7 @@ async def chat(
                 if not supports_streaming:
                     logger.info("non Streaming is running")
                     async for response_chunk in streaming_handler.handle_non_streaming_response(
-                        request_handler, URL, headers, request_data, message.session_id, user_id, user_info, message_handler
+                        request_handler, endpoint_url, headers, request_data, message.session_id, user_id, user_info, message_handler
                     ):
                         yield response_chunk
                 else:
@@ -158,7 +199,7 @@ async def chat(
                                 start_time = time.time()
 
                                 async with streaming_client.stream('POST', 
-                                    URL,
+                                    endpoint_url,
                                     headers=headers,
                                     json=request_data,
                                     timeout=streaming_timeout
@@ -177,18 +218,18 @@ async def chat(
                                         raise Exception("Streaming not supported")
                             except (httpx.ReadTimeout, httpx.HTTPError, Exception) as e:
                                 logger.error(f"Streaming failed with error: {str(e)}, falling back to non-streaming")
-                                if SERVING_ENDPOINT_NAME in streaming_support_cache['endpoints']:
-                                    streaming_support_cache['endpoints'][SERVING_ENDPOINT_NAME].update({
+                                if endpoint_name in streaming_support_cache['endpoints']:
+                                    streaming_support_cache['endpoints'][endpoint_name].update({
                                         'supports_streaming': False,
                                         'last_checked': datetime.now()
                                     })
                                 
                                 request_data["stream"] = False
                                 # Add a random query parameter to avoid any caching
-                                url = URL+"?nocache={uuid.uuid4()}"
-                                logger.info(f"Making fallback request with fresh connection to {url}")
+                                fallback_url = endpoint_url+"?nocache={uuid.uuid4()}"
+                                logger.info(f"Making fallback request with fresh connection to {fallback_url}")
                                 async for response_chunk in streaming_handler.handle_non_streaming_response(
-                                    request_handler, url, headers, request_data, message.session_id, user_id, user_info, message_handler
+                                    request_handler, fallback_url, headers, request_data, message.session_id, user_id, user_info, message_handler
                                 ):
                                     yield response_chunk
             except Exception as e:
@@ -287,6 +328,16 @@ async def regenerate_message(
 ):
     try:
         user_id = user_info["user_id"]
+        
+        # Determine which endpoint to use - prefer request parameter, fall back to default
+        endpoint_name = request.serving_endpoint or SERVING_ENDPOINT_NAME
+        if not endpoint_name:
+            raise HTTPException(
+                status_code=400,
+                detail="No serving endpoint specified. Please select an endpoint."
+            )
+        endpoint_url = get_serving_endpoint_url(endpoint_name)
+        
         chat_history = await load_chat_history(request.session_id, user_id, False, chat_history_cache, chat_db)
         message_index = next(
             (i for i, msg in enumerate(chat_history) 
@@ -308,7 +359,7 @@ async def regenerate_message(
         async def generate():
             timeout = httpx.Timeout(connect=5.0, read=30.0, write=5.0, pool=5.0)
             async with httpx.AsyncClient(timeout=timeout) as client:
-                supports_streaming, supports_trace = await check_endpoint_capabilities(SERVING_ENDPOINT_NAME, streaming_support_cache)
+                supports_streaming, supports_trace = await check_endpoint_capabilities(endpoint_name, streaming_support_cache)
                 request_data = {
                 "messages": [
                     *([{"role": msg["role"], "content": msg["content"]} for msg in history_up_to_message[:-1]] 
@@ -330,7 +381,7 @@ async def regenerate_message(
                     async with streaming_semaphore:
                         async with client.stream(
                             'POST',
-                            URL,
+                            endpoint_url,
                             headers=headers,
                             json=request_data,
                             timeout=timeout
@@ -346,7 +397,7 @@ async def regenerate_message(
                                 
                 else:
                     async for response_chunk in streaming_handler.handle_non_streaming_regeneration(
-                        request_handler, request.session_id, request.message_id, URL, 
+                        request_handler, request.session_id, request.message_id, endpoint_url, 
                         headers, request_data, user_id, user_info,
                         original_timestamp, first_token_time, sources, ttft, message_handler
                     ):

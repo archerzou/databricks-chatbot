@@ -6,7 +6,7 @@ load_dotenv(override=True)
 
 # Constants
 SERVING_ENDPOINT_NAME = os.getenv("SERVING_ENDPOINT_NAME")
-assert SERVING_ENDPOINT_NAME, "SERVING_ENDPOINT_NAME is not set"
+# SERVING_ENDPOINT_NAME is now optional - can be selected dynamically via UI
 
 DATABRICKS_HOST = os.environ.get("DATABRICKS_HOST")
 CLIENT_ID = os.environ.get("DATABRICKS_CLIENT_ID")
@@ -29,4 +29,11 @@ ERROR_MESSAGES = {
     "not_found": "{resource_id} not found. Please ensure you're using a valid session ID.",
     "general": "An error occurred while processing your request."
 } 
-URL = f"https://{DATABRICKS_HOST}/serving-endpoints/{SERVING_ENDPOINT_NAME}/invocations"
+
+# Legacy URL for backward compatibility (uses default endpoint if set)
+URL = f"https://{DATABRICKS_HOST}/serving-endpoints/{SERVING_ENDPOINT_NAME}/invocations" if SERVING_ENDPOINT_NAME else None
+
+
+def get_serving_endpoint_url(endpoint_name: str) -> str:
+    """Construct the serving endpoint URL dynamically based on the endpoint name."""
+    return f"https://{DATABRICKS_HOST}/serving-endpoints/{endpoint_name}/invocations"
