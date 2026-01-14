@@ -12,6 +12,11 @@ DATABRICKS_HOST = os.environ.get("DATABRICKS_HOST")
 CLIENT_ID = os.environ.get("DATABRICKS_CLIENT_ID")
 CLIENT_SECRET = os.environ.get("DATABRICKS_CLIENT_SECRET")
 
+# Genie Space Configuration
+GENIE_SPACE_ID = os.environ.get("GENIE_SPACE_ID", "01f0eaaeedaf11b7b236db1eb5bbd243")
+GENIE_SPACE_NAME = os.environ.get("GENIE_SPACE_NAME", "genie-client-background")
+GENIE_MCP_ENABLED = os.environ.get("GENIE_MCP_ENABLED", "true").lower() == "true"
+
 # API Configuration
 API_TIMEOUT = 30.0
 STREAMING_TIMEOUT = 30.0

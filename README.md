@@ -5,11 +5,45 @@ An AI-powered conversational interface that leverages Databricks' model serving 
 ## Features
 
 - Real-time chat interface with streaming AI responses
+- **Intelligent Query Routing**: Automatically routes data queries to Genie Space and general questions to Claude LLM
 - Chat history persistence across sessions
 - Message regeneration capability
 - User feedback system (thumbs up/down ratings)
 - Secure token-based authentication
 - Rate limiting and error handling
+
+## Intelligent Query Routing
+
+The chatbot implements intelligent query routing between two services:
+
+### Data Queries (Genie Space)
+Queries about data, metrics, clients, and database information are automatically routed to the Genie Space MCP server. This includes questions like:
+- "How many clients have housing risk?"
+- "Show me the demographics breakdown"
+- "What is the average outcome score?"
+- "List all clients with disability needs"
+- "Find records with mental health support"
+
+### General Queries (Claude LLM)
+Conversational, creative, or analytical questions that don't require data access are routed to the Claude LLM endpoint:
+- "Explain machine learning"
+- "What is artificial intelligence?"
+- "Write a summary of best practices"
+- "How does natural language processing work?"
+
+### Routing Logic
+The routing decision is based on keyword detection with confidence scoring:
+- Data-related keywords: "how many", "show me", "query", "table", "clients", "metrics", "count", "list", "find", "database", "housing risk", "disability", "mental health", etc.
+- General keywords: "explain", "what is", "how does", "write", "create", "define", "describe", etc.
+
+If a query matches data keywords with sufficient confidence (>=50%), it's routed to Genie Space. Otherwise, it defaults to Claude LLM. If Genie Space fails, the system gracefully falls back to Claude LLM.
+
+### Configuration
+The routing can be enabled/disabled via environment variables:
+```bash
+GENIE_MCP_ENABLED=true  # Enable/disable Genie routing (default: true)
+GENIE_SPACE_ID=01f0eaaeedaf11b7b236db1eb5bbd243  # Genie Space ID
+```
 
 ## Architecture
 

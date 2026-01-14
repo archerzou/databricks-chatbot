@@ -18,7 +18,7 @@ from token_minter import TokenMinter
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from models import MessageRequest, MessageResponse, ChatHistoryItem, ChatHistoryResponse, CreateChatRequest, ErrorRequest, RegenerateRequest
-from utils.config import URL, SERVING_ENDPOINT_NAME, DATABRICKS_HOST, CLIENT_ID, CLIENT_SECRET
+from utils.config import URL, SERVING_ENDPOINT_NAME, DATABRICKS_HOST, CLIENT_ID, CLIENT_SECRET, GENIE_MCP_ENABLED
 from utils import *
 from utils.logging_handler import with_logging
 from utils.app_state import app_state
@@ -34,6 +34,8 @@ from utils.dependencies import (
     get_streaming_support_cache
 )
 from utils.data_classes import StreamingContext, RequestContext, HandlerContext
+from utils.query_router import query_router
+from utils.genie_client import GenieMCPClient
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -65,6 +67,9 @@ token_minter = TokenMinter(
     client_secret=CLIENT_SECRET,
     host=DATABRICKS_HOST
 )
+
+# Initialize Genie MCP client
+genie_client = GenieMCPClient(token_minter) if GENIE_MCP_ENABLED else None
 
 # Dependency to get auth headers
 async def get_auth_headers() -> dict:
@@ -121,6 +126,56 @@ async def chat(
         
         async def generate():
             try:
+                # Check if query should be routed to Genie Space for data queries
+                should_use_genie = (
+                    GENIE_MCP_ENABLED and 
+                    genie_client is not None and 
+                    query_router.should_route_to_genie(message.content)
+                )
+                
+                if should_use_genie:
+                    # Route to Genie Space for data queries
+                    logger.info(f"Routing query to Genie Space: {message.content[:50]}...")
+                    assistant_message_id = str(uuid.uuid4())
+                    start_time = time.time()
+                    
+                    # Get existing Genie conversation ID for follow-up queries
+                    genie_conversation_id = genie_client.get_conversation_id(message.session_id)
+                    
+                    # Query Genie Space
+                    response_text, new_conversation_id, error = await genie_client.query_genie(
+                        query=message.content,
+                        session_id=message.session_id,
+                        conversation_id=genie_conversation_id
+                    )
+                    
+                    total_time = time.time() - start_time
+                    
+                    if error:
+                        # If Genie fails, fall back to Claude LLM
+                        logger.warning(f"Genie query failed: {error}. Falling back to Claude LLM.")
+                        response_text = f"I couldn't retrieve data from the database. Let me help you with a general response instead.\n\n{error}"
+                    
+                    # Create and save the assistant message
+                    assistant_message = message_handler.create_message(
+                        message_id=assistant_message_id,
+                        content=response_text,
+                        role="assistant",
+                        session_id=message.session_id,
+                        user_id=user_id,
+                        user_info=user_info,
+                        sources=[{"type": "genie_space", "conversation_id": new_conversation_id}] if new_conversation_id else None,
+                        metrics={"totalTime": total_time, "source": "genie"}
+                    )
+                    
+                    # Stream the response
+                    yield f"data: {assistant_message.model_dump_json()}\n\n"
+                    yield "event: done\ndata: {}\n\n"
+                    return
+                
+                # Default: Route to Claude LLM for general queries
+                logger.info(f"Routing query to Claude LLM: {message.content[:50]}...")
+                
                 streaming_timeout = httpx.Timeout(
                     connect=8.0,
                     read=30.0,
