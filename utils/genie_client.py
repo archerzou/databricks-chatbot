@@ -88,14 +88,14 @@ class GenieMCPClient:
                 
                 try:
                     parsed = json.loads(text_content)
-                    new_conversation_id = parsed.get("conversation_id")
-                    message_id = parsed.get("message_id")
+                    new_conversation_id = parsed.get("conversationId")
+                    message_id = parsed.get("messageId")
                     status = parsed.get("status", "")
                     
                     if new_conversation_id:
                         self.conversation_ids[session_id] = new_conversation_id
                     
-                    if status.lower() not in ["completed", "complete"]:
+                    if status.upper() not in ["COMPLETED", "COMPLETE"]:
                         response_text, error = await self._poll_for_completion(
                             new_conversation_id or conversation_id,
                             message_id
@@ -104,8 +104,8 @@ class GenieMCPClient:
                             return "", new_conversation_id, error
                         return response_text, new_conversation_id, None
                     
-                    response_text = parsed.get("response", text_content)
-                    return self._format_response(response_text), new_conversation_id, None
+                    content_data = parsed.get("content", text_content)
+                    return self._format_genie_content(content_data), new_conversation_id, None
                     
                 except json.JSONDecodeError:
                     return self._format_response(text_content), conversation_id, None
@@ -186,10 +186,10 @@ class GenieMCPClient:
                         parsed = json.loads(text_content)
                         status = parsed.get("status", "")
                         
-                        if status.lower() in ["completed", "complete"]:
-                            response_text = parsed.get("response", text_content)
-                            return self._format_response(response_text), None
-                        elif status.lower() in ["error", "failed"]:
+                        if status.upper() in ["COMPLETED", "COMPLETE"]:
+                            content_data = parsed.get("content", text_content)
+                            return self._format_genie_content(content_data), None
+                        elif status.upper() in ["ERROR", "FAILED"]:
                             return "", parsed.get("error", "Query failed")
                     except json.JSONDecodeError:
                         pass
@@ -201,6 +201,55 @@ class GenieMCPClient:
                 await asyncio.sleep(poll_interval)
         
         return "", "Query timed out. Please try again."
+    
+    def _format_genie_content(self, content: Any) -> str:
+        """Format the Genie response content for display.
+        
+        The Genie response content can be:
+        - A string containing JSON with query results
+        - A dict with statement_response containing the actual data
+        """
+        if isinstance(content, str):
+            try:
+                data = json.loads(content)
+                return self._format_genie_content(data)
+            except json.JSONDecodeError:
+                return content
+        
+        if isinstance(content, dict):
+            statement_response = content.get("statement_response", {})
+            result = statement_response.get("result", {})
+            data_array = result.get("data_array", [])
+            
+            if data_array:
+                manifest = statement_response.get("manifest", {})
+                schema = manifest.get("schema", {})
+                columns = schema.get("columns", [])
+                column_names = [col.get("name", f"col_{i}") for i, col in enumerate(columns)]
+                
+                rows = []
+                for row in data_array:
+                    values = row.get("values", [])
+                    row_data = {}
+                    for i, val in enumerate(values):
+                        col_name = column_names[i] if i < len(column_names) else f"col_{i}"
+                        row_data[col_name] = val.get("string_value", str(val))
+                    rows.append(row_data)
+                
+                if rows:
+                    return self._format_data_as_table(rows)
+            
+            description = content.get("description", "")
+            query = content.get("query", "")
+            
+            if description:
+                return description
+            elif query:
+                return f"Query executed: {query}"
+            
+            return json.dumps(content, indent=2)
+        
+        return str(content)
     
     def _format_response(self, response: Any) -> str:
         """Format the Genie response for display."""
