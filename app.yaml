@@ -11,3 +11,5 @@ env:
     value: databricks-claude-sonnet-4-5
   - name: DATABRICKS_HOST
     value: adb-1108746899088703.3.azuredatabricks.net
+  - name: "SPACE_ID"
+    value: "01f0eaaeedaf11b7b236db1eb5bbd243"
