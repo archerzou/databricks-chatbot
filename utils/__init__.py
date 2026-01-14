@@ -5,6 +5,8 @@ from .error_handler import ErrorHandler
 from .logging_handler import with_logging
 from .chat_history_cache import ChatHistoryCache
 from .data_utils import load_chat_history, create_response_data, get_user_info, check_endpoint_capabilities
+from .query_router import QueryRouter, QueryType, query_router
+from .genie_client import GenieMCPClient
 
 __all__ = ['MessageHandler', 
            'StreamingHandler', 
@@ -15,5 +17,9 @@ __all__ = ['MessageHandler',
            'create_response_data',
            'with_logging',
            'get_user_info',
-           'check_endpoint_capabilities'
-           ] 
+           'check_endpoint_capabilities',
+           'QueryRouter',
+           'QueryType',
+           'query_router',
+           'GenieMCPClient'
+           ]   
