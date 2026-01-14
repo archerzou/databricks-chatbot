@@ -2,6 +2,7 @@ import httpx
 import asyncio
 import logging
 import json
+import uuid
 from typing import Dict, Any, Optional, Tuple, Union
 import pandas as pd
 from token_minter import TokenMinter
@@ -53,6 +54,8 @@ class GenieMCPClient:
                 arguments["conversation_id"] = conversation_id
             
             payload = {
+                "jsonrpc": "2.0",
+                "id": str(uuid.uuid4()),
                 "method": "tools/call",
                 "params": {
                     "name": tool_name,
@@ -144,6 +147,8 @@ class GenieMCPClient:
                 headers = self._get_headers()
                 
                 payload = {
+                    "jsonrpc": "2.0",
+                    "id": str(uuid.uuid4()),
                     "method": "tools/call",
                     "params": {
                         "name": tool_name,
